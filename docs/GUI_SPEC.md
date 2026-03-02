@@ -21,10 +21,15 @@
 lab_control/
 ├── gui/                          # NEW — entire GUI package
 │   ├── __init__.py               # empty
-│   ├── workers.py                # QThread subclasses, one per experiment
+│   ├── workers.py                # QThread subclasses for experiments
+│   ├── instruments/
+│   │   ├── __init__.py           # empty
+│   │   ├── workers.py            # QThread for instrument panels
+│   │   ├── gsm20h10_panel.py     # GSM20H10 manual control panel
+│   │   └── e36300_panel.py       # E36300 manual control panel
 │   ├── widgets/
 │   │   ├── __init__.py           # empty
-│   │   ├── status_bar.py         # InstrumentStatusBar widget
+│   │   ├── connections_widget.py # Connection testing for all instruments
 │   │   ├── log_viewer.py         # LogViewerWidget (QTextEdit sink)
 │   │   └── config_editor.py      # ConfigEditorWidget (YAML viewer/editor)
 │   └── tabs/
@@ -35,7 +40,8 @@ lab_control/
 ├── gui_main.py                   # NEW — GUI entry point (mirrors main.py)
 └── docs/
     ├── GUI_SPEC.md               # this file
-    └── GUI_TASKS.md              # Copilot task list
+    ├── GUI_TASKS.md              # Copilot task list
+    └── GUI_INSTRUMENTS.md        # Instrument panels spec
 ```
 
 **Do NOT modify**: `main.py`, `instruments/`, `experiments/`, `utils/`, `config/`, `tests/`.
@@ -46,36 +52,56 @@ lab_control/
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  Lab Instrument Control  v0.1          [Load Config ▼]          │
-├──────────[InstrumentStatusBar]──────────────────────────────────┤
-│  KDC101 ●  PM100D ●  E36300 ●  GSM20H10 ●  PicoHarp300 ●      │
-│                                         [Check All]  [Discover] │
+│  Lab Instrument Control v0.1     Config: config/instruments.yaml  │
+│                                                   [Load Config...] │
 ├─────────────────────────────────────────────────────────────────┤
-│  [Rotation Sweep] [I-V Curve] [TCSPC Scan] [Config] [Log]      │
+│  [Experiments] [Instruments] [Connections] [Config] [Log]         │
 │ ┌───────────────────────────────────────────────────────────┐   │
 │ │                     <Tab Content>                         │   │
-│ │  [Parameters Panel]        [Live Plot / pyqtgraph]        │   │
-│ │                                                           │   │
-│ │  [Run] [Abort]  Progress: ████████░░ 80%  ETA: 12s       │   │
+│ │  Experiments: Rotation Sweep | I-V Curve | TCSPC Scan     │   │
+│ │  Instruments: GSM20H10 | E36300                            │   │
+│ │  Connections: Test KDC101, PM100D, E36300, GSM, PicoHarp  │   │
 │ └───────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+**Tab organization:**
+- **Experiments**: sub-tabs for Rotation Sweep, I-V Curve, TCSPC Scan (automated workflows)
+- **Instruments**: sub-tabs for GSM20H10 and E36300 (manual control panels)
+- **Connections**: single widget testing all 5 instruments (read-only health checks)
+- **Config**: YAML editor
+- **Log**: log viewer
+
+**Header bar** shows: app title, active config file path (read-only label), and [Load Config...] button.
+
+**No always-on status bar polling**: The Connections tab is the canonical place to check instrument health.
 
 ---
 
 ## 4. Widget Descriptions
 
-### 4.1 InstrumentStatusBar
+### 4.1 ConnectionsWidget
 
-A horizontal row of colored indicator dots (●) and labels, one per instrument. Green = connected/OK, red = error/disconnected, grey = not yet checked.
+Replaces the old InstrumentStatusBar concept. Provides structured, non-destructive connection testing for all instruments.
 
-- Uses a `QTimer` polling every **5 seconds** when the window is idle (no experiment running).
-- Polling calls `instrument.is_connected` in a lightweight `QThread` to avoid blocking the UI.
-- Instruments polled: `KDC101Stage`, `PM100D`, `E36300Supply`, `GSM20H10`, `PicoHarp300`.
-- Each indicator is a `QLabel` with a colored Unicode circle (`●`) set via stylesheet.
-- Colour mapping: `"green"` → connected, `"red"` → error, `"#888888"` → unknown.
-- The **[Check All]** button triggers an immediate poll of all instruments.
-- The **[Discover]** button runs `main.discover()` in a worker and streams output to the Log tab.
+**Purpose**: Run safe, read-only connection tests on demand (per instrument or all at once).
+
+**Layout**: One row per instrument with:
+- Colored dot indicator (●): grey (not tested), orange (running), green (PASS), red (FAIL)
+- Instrument name + address/resource from config
+- [Test] and [Clear] buttons per row
+- [Test All] button at bottom
+
+**Per-instrument safe test actions** (read-only, never enable outputs or move stages):
+- KDC101: connect + read instrument_id
+- PM100D: connect + read ID + one power sample
+- E36300: connect + read ID + read output state (do NOT enable)
+- GSM20H10: connect + read ID + confirm output OFF (do NOT enable)
+- PicoHarp300: open + read ID/serial + close
+
+**Simulate mode**: If `simulate: true` in config, show orange dot with "SIMULATED — no hardware test".
+
+See `GUI_INSTRUMENTS.md` for full specification.
 
 ### 4.2 LogViewerWidget
 
@@ -116,6 +142,27 @@ All three experiment tabs share this layout pattern:
 - `QProgressBar` shows `0–100%` based on step index from the worker.
 - Status label shows the last emitted log message from the worker.
 - Output dir label shows the timestamped output path after a run completes.
+
+### 4.5 Instrument Panels (GSM20H10 and E36300)
+
+Manual control panels for interactive operation. See `GUI_INSTRUMENTS.md` for full layouts and safety requirements.
+
+**GSM20H10 panel** provides:
+- Connect/Disconnect
+- Mode selection (V-source / I-source)
+- Setpoint + compliance controls
+- Output ON/OFF
+- Single read + continuous polling mode
+- Live strip chart (pyqtgraph)
+- Always-visible panic Output OFF button
+
+**E36300 panel** provides:
+- Connect/Disconnect
+- Channel selection (CH1/CH2/CH3)
+- Voltage + current limit setting
+- Output ON/OFF
+- Single channel readback
+- Panic ALL OFF button
 
 ---
 
@@ -160,7 +207,7 @@ Workers will be updated to call `iter_*` and emit `data_point(dict)` per step. T
 1. **SI units everywhere** — same as the rest of the repo. Angles in deg, power in W, voltage in V, current in A, time in s. Label every input field with its unit.
 2. **No `print()` calls** — use `logging` only. The GUI captures the logging stream; `print()` is invisible.
 3. **Config-driven** — the GUI reads `config/instruments.yaml` on startup. The config path is shown in the header and editable in the Config tab.
-4. **Simulate mode respected** — if `simulate: true` in config, the status bar shows instruments as "SIMULATED" (grey dot, label text `SIM`), not green.
+4. **Simulate mode respected** — if `simulate: true` in config, instruments show as "SIMULATED" in the Connections tab (orange dot), not green.
 5. **Thread safety** — all instrument calls happen in `QThread`. No instrument objects are created on the main thread.
 6. **Context managers** — instruments are opened via `with` blocks inside `QThread.run()`, exactly as the CLI does.
 7. **Abort** — the `QThread` sets a `threading.Event` (`_abort_event`). Each worker checks this event between steps. On abort, the worker cleans up (moves stage to 0° if applicable, turns off SMU output) before emitting `finished`.
