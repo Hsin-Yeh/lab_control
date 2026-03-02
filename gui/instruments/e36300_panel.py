@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
 )
 
 from instruments.e36300 import E36300Supply
-from gui.instruments.workers import ConnectWorker, SingleReadWorker
+from gui.instruments.workers import ConnectWorker, PanicWorker, SingleReadWorker, WriteCommandWorker
 
 
 class E36300Panel(QWidget):
@@ -31,6 +31,9 @@ class E36300Panel(QWidget):
         self._config = config
         self._connect_worker: ConnectWorker | None = None
         self._single_worker: SingleReadWorker | None = None
+        self._is_connected: bool = False
+        self._write_worker: WriteCommandWorker | None = None
+        self._panic_worker: PanicWorker | None = None
 
         self._channel = QComboBox(self)
         self._channel.addItems(["1", "2", "3"])
@@ -117,42 +120,91 @@ class E36300Panel(QWidget):
         self._connect_worker.start()
 
     def _on_connected(self, ok: bool, message: str) -> None:
+        """Update connection state and label.
+
+        Parameters:
+            ok: Connection success (units: boolean).
+            message: Instrument ID or error text (units: none).
+        """
+        self._is_connected = ok
         if ok:
             self._id_label.setText(f"ID: {message}")
         else:
             QMessageBox.warning(self, "Connect Failed", message)
 
     def _on_disconnect(self) -> None:
+        """Clear connection state.
+
+        Parameters:
+            None (units: none).
+        """
+        self._is_connected = False
         self._id_label.setText("ID: (not connected)")
+        self._status.setText("Status: OFF")
 
     def _on_apply(self) -> None:
+        """Apply voltage and current limit in worker thread.
+
+        Parameters:
+            None (units: none).
+        """
         channel = self._channel_value()
-        try:
-            with E36300Supply(self._config) as inst:
-                inst.set_voltage(channel, float(self._voltage.value()))
-                inst.set_current_limit(channel, float(self._current.value()))
-        except Exception as exc:
-            QMessageBox.warning(self, "Apply Failed", str(exc))
+        voltage = float(self._voltage.value())
+        current = float(self._current.value())
+
+        def _cmd(inst) -> None:
+            inst.set_voltage(channel, voltage)
+            inst.set_current_limit(channel, current)
+
+        self._apply_btn.setEnabled(False)
+        self._write_worker = WriteCommandWorker(E36300Supply, self._config, _cmd)
+        self._write_worker.success.connect(lambda: self._apply_btn.setEnabled(True))
+        self._write_worker.error.connect(lambda msg: QMessageBox.warning(self, "Apply Failed", msg))
+        self._write_worker.error.connect(lambda: self._apply_btn.setEnabled(True))
+        self._write_worker.start()
 
     def _on_output_on(self) -> None:
+        """Enable channel output in worker thread.
+
+        Parameters:
+            None (units: none).
+        """
         channel = self._channel_value()
-        try:
-            with E36300Supply(self._config) as inst:
-                inst.output_on(channel)
-            self._status.setText("Status: ON")
-        except Exception as exc:
-            QMessageBox.warning(self, "Output ON Failed", str(exc))
+        self._output_on_btn.setEnabled(False)
+        self._write_worker = WriteCommandWorker(
+            E36300Supply, self._config, lambda inst: inst.output_on(channel)
+        )
+        self._write_worker.success.connect(lambda: self._status.setText("Status: ON"))
+        self._write_worker.success.connect(lambda: self._output_on_btn.setEnabled(True))
+        self._write_worker.error.connect(lambda msg: QMessageBox.warning(self, "Output ON Failed", msg))
+        self._write_worker.error.connect(lambda: self._output_on_btn.setEnabled(True))
+        self._write_worker.start()
 
     def _on_output_off(self) -> None:
+        """Disable channel output in worker thread.
+
+        Parameters:
+            None (units: none).
+        """
         channel = self._channel_value()
-        try:
-            with E36300Supply(self._config) as inst:
-                inst.output_off(channel)
-            self._status.setText("Status: OFF")
-        except Exception as exc:
-            QMessageBox.warning(self, "Output OFF Failed", str(exc))
+        self._output_off_btn.setEnabled(False)
+        self._write_worker = WriteCommandWorker(
+            E36300Supply, self._config, lambda inst: inst.output_off(channel)
+        )
+        self._write_worker.success.connect(lambda: self._status.setText("Status: OFF"))
+        self._write_worker.success.connect(lambda: self._output_off_btn.setEnabled(True))
+        self._write_worker.error.connect(lambda msg: QMessageBox.warning(self, "Output OFF Failed", msg))
+        self._write_worker.error.connect(lambda: self._output_off_btn.setEnabled(True))
+        self._write_worker.start()
 
     def _on_read(self) -> None:
+        """Trigger single channel readback if connected.
+
+        Parameters:
+            None (units: none).
+        """
+        if not self._is_connected:
+            return
         channel = self._channel_value()
         self._single_worker = SingleReadWorker(E36300Supply, self._config, channel=channel)
         self._single_worker.data.connect(self._on_data)
@@ -167,9 +219,13 @@ class E36300Panel(QWidget):
         self._i_label.setText(f"Measured I (CH{ch}): {current:.3f} A")
 
     def _on_panic(self) -> None:
-        try:
-            with E36300Supply(self._config) as inst:
-                inst.output_off()
-            self._status.setText("Status: OFF")
-        except Exception as exc:
-            QMessageBox.warning(self, "Panic OFF Failed", str(exc))
+        """Fire-and-forget panic all outputs off.
+
+        Parameters:
+            None (units: none).
+        """
+        self._panic_worker = PanicWorker(E36300Supply, self._config)
+        self._panic_worker.done.connect(
+            lambda ok, msg: self._status.setText("Status: OFF" if ok else f"Panic FAIL: {msg}")
+        )
+        self._panic_worker.start()

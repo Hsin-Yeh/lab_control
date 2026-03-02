@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import deque
+from datetime import datetime
 from pathlib import Path
 import time
 
@@ -23,7 +24,13 @@ from PySide6.QtWidgets import (
 )
 
 from instruments.gsm20h10 import GSM20H10
-from gui.instruments.workers import ConnectWorker, ContinuousPollWorker, SingleReadWorker
+from gui.instruments.workers import (
+    ConnectWorker,
+    ContinuousPollWorker,
+    PanicWorker,
+    SingleReadWorker,
+    WriteCommandWorker,
+)
 
 
 class GSM20H10Panel(QWidget):
@@ -40,6 +47,10 @@ class GSM20H10Panel(QWidget):
         self._connect_worker: ConnectWorker | None = None
         self._single_worker: SingleReadWorker | None = None
         self._poll_worker: ContinuousPollWorker | None = None
+        self._write_worker: WriteCommandWorker | None = None
+        self._panic_worker: PanicWorker | None = None
+        self._is_connected: bool = False
+        self._live_csv_path: Path | None = None
 
         self._setpoint = QDoubleSpinBox(self)
         self._setpoint.setRange(-210.0, 210.0)
@@ -145,39 +156,94 @@ class GSM20H10Panel(QWidget):
         self._connect_worker.start()
 
     def _on_connected(self, ok: bool, message: str) -> None:
+        """Update connection state and ID label.
+
+        Parameters:
+            ok: Connection success (units: boolean).
+            message: Instrument ID or error text (units: none).
+        """
+        self._is_connected = ok
         if ok:
             self._id_label.setText(f"ID: {message}")
         else:
             QMessageBox.warning(self, "Connect Failed", message)
 
     def _on_disconnect(self) -> None:
-        self._id_label.setText("ID: (not connected)")
+        """Clear connection state and stop live polling.
+
+        Parameters:
+            None (units: none).
+        """
         self._on_stop_live()
+        self._is_connected = False
+        self._id_label.setText("ID: (not connected)")
+        self._status_label.setText("Status: OFF")
 
     def _on_output_on(self) -> None:
-        try:
-            with GSM20H10(self._config) as inst:
-                inst.set_source_voltage(float(self._setpoint.value()), float(self._compliance.value()))
-                inst.output_on()
-            self._status_label.setText("Status: ON")
-        except Exception as exc:
-            QMessageBox.warning(self, "Output ON Failed", str(exc))
+        """Enable output in worker thread.
+
+        Parameters:
+            None (units: none).
+        """
+        if not self._is_connected:
+            QMessageBox.information(self, "Not Connected", "Connect to the instrument first.")
+            return
+
+        setpoint = float(self._setpoint.value())
+        compliance = float(self._compliance.value())
+
+        def _cmd(inst) -> None:
+            inst.set_source_voltage(setpoint, compliance)
+            inst.output_on()
+
+        self._output_on_btn.setEnabled(False)
+        self._write_worker = WriteCommandWorker(GSM20H10, self._config, _cmd)
+        self._write_worker.success.connect(lambda: self._status_label.setText("Status: ON"))
+        self._write_worker.success.connect(lambda: self._output_on_btn.setEnabled(True))
+        self._write_worker.error.connect(self._on_write_error)
+        self._write_worker.error.connect(lambda: self._output_on_btn.setEnabled(True))
+        self._write_worker.start()
 
     def _on_output_off(self) -> None:
-        try:
-            with GSM20H10(self._config) as inst:
-                inst.output_off()
-            self._status_label.setText("Status: OFF")
-        except Exception as exc:
-            QMessageBox.warning(self, "Output OFF Failed", str(exc))
+        """Disable output in worker thread.
+
+        Parameters:
+            None (units: none).
+        """
+        if not self._is_connected:
+            QMessageBox.information(self, "Not Connected", "Connect to the instrument first.")
+            return
+
+        self._output_off_btn.setEnabled(False)
+        self._write_worker = WriteCommandWorker(GSM20H10, self._config, lambda inst: inst.output_off())
+        self._write_worker.success.connect(lambda: self._status_label.setText("Status: OFF"))
+        self._write_worker.success.connect(lambda: self._output_off_btn.setEnabled(True))
+        self._write_worker.error.connect(self._on_write_error)
+        self._write_worker.error.connect(lambda: self._output_off_btn.setEnabled(True))
+        self._write_worker.start()
 
     def _on_read_once(self) -> None:
+        if not self._is_connected:
+            QMessageBox.information(self, "Not Connected", "Connect to the instrument first.")
+            return
+
         self._single_worker = SingleReadWorker(GSM20H10, self._config)
         self._single_worker.data.connect(self._on_data)
         self._single_worker.error.connect(lambda message: QMessageBox.warning(self, "Read Error", message))
         self._single_worker.start()
 
     def _on_start_live(self) -> None:
+        if not self._is_connected:
+            QMessageBox.information(self, "Not Connected", "Connect to the instrument first.")
+            return
+
+        if self._log_csv.isChecked():
+            stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            self._live_csv_path = Path("output") / f"gsm20h10_live_{stamp}.csv"
+            self._live_csv_path.parent.mkdir(parents=True, exist_ok=True)
+        else:
+            self._live_csv_path = None
+
         self._poll_worker = ContinuousPollWorker(
             GSM20H10,
             self._config,
@@ -204,8 +270,25 @@ class GSM20H10Panel(QWidget):
         _ = reason
 
     def _on_panic(self) -> None:
+        """Fire-and-forget panic output off.
+
+        Parameters:
+            None (units: none).
+        """
         self._on_stop_live()
-        self._on_output_off()
+        self._panic_worker = PanicWorker(GSM20H10, self._config)
+        self._panic_worker.done.connect(
+            lambda ok, msg: self._status_label.setText("Status: OFF" if ok else f"Panic FAIL: {msg}")
+        )
+        self._panic_worker.start()
+
+    def _on_write_error(self, message: str) -> None:
+        """Show write error in a dialog.
+
+        Parameters:
+            message: Error description (units: none).
+        """
+        QMessageBox.warning(self, "Command Failed", message)
 
     def _on_data(self, payload: dict) -> None:
         voltage = float(payload.get("voltage_V", 0.0))
@@ -235,10 +318,11 @@ class GSM20H10Panel(QWidget):
             current: Measured current (units: A).
             power: Measured power (units: W).
         """
-        file_path = Path("output") / "gsm20h10_live.csv"
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-        exists = file_path.exists()
-        with file_path.open("a", encoding="utf-8") as handle:
+        if self._live_csv_path is None:
+            return
+
+        exists = self._live_csv_path.exists()
+        with self._live_csv_path.open("a", encoding="utf-8") as handle:
             if not exists:
                 handle.write("timestamp_s,voltage_V,current_A,power_W\n")
             handle.write(f"{time.time():.6f},{voltage:.6f},{current:.6f},{power:.6f}\n")

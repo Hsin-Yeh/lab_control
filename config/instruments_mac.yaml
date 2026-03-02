@@ -1,33 +1,26 @@
+# Mac development config — all instruments in simulate mode.
+# Use this on macOS where DLLs and VISA hardware are not available.
+# On Windows, use config/instruments.yaml with simulate: false.
+
 kdc101:
-  serial: "27xxxxxx"
-  kinesis_path: null
-  scale: "PRM1-Z8"
-  velocity_deg_per_s: 10.0
-  settle_time_s: 0.3
   simulate: true
+  serial_number: "27000001"
+  kinesis_path: null
 
 pm100d:
-  visa_resource: "USB0::0x1313::0x8072::P0012345::INSTR"
+  simulate: true
+  resource: "USB0::0x1313::0x8072::P0000001::INSTR"
   wavelength_nm: 532
   averaging_count: 10
-  simulate: true
 
 e36300:
-  visa_resource: "TCPIP0::192.168.1.100::INSTR"
   simulate: true
+  resource: "TCPIP0::192.168.1.100::inst0::INSTR"
 
 gsm20h10:
-  visa_resource: "GPIB0::5::INSTR"
   simulate: true
+  resource: "GPIB0::5::INSTR"
 
 picoharp300:
-  device_index: 0
-  phlib_path: null
-  sync_divider: 1
-  cfd_sync_level_mv: 100
-  cfd_sync_zerocross_mv: 10
-  cfd_input_level_mv: 100
-  cfd_input_zerocross_mv: 10
-  binning: 0
-  acq_time_ms: 1000
   simulate: true
+  dll_path: null

@@ -26,11 +26,14 @@ def main() -> None:
         None (units: none).
     """
     parser = argparse.ArgumentParser(description="Launch lab-control GUI")
-    parser.add_argument("--config", default=None)
+    parser.add_argument("config_path", nargs="?", default=None)
+    parser.add_argument("--config", dest="config_flag", default=None)
     args = parser.parse_args()
 
-    if args.config:
-        default_config = Path(args.config)
+    chosen_config = args.config_flag or args.config_path
+
+    if chosen_config:
+        default_config = Path(chosen_config)
     elif sys.platform == "darwin":
         default_config = Path("config") / "instruments_mac.yaml"
     else:

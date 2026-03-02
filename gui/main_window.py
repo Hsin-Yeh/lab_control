@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+import threading
 from pathlib import Path
 
 import yaml
@@ -103,11 +104,15 @@ class MainWindow(QMainWindow):
         self._set_path_label()
 
     def closeEvent(self, event) -> None:
-        """Warn on close and attempt panic-off for power outputs.
+        """Warn user, run panic-off in background, then accept close.
 
         Parameters:
             event: Qt close event (units: none).
         """
+        if not self.isVisible():
+            event.accept()
+            return
+
         reply = QMessageBox.question(
             self,
             "Exit",
@@ -120,16 +125,29 @@ class MainWindow(QMainWindow):
             return
 
         if reply == QMessageBox.Yes:
-            try:
-                with GSM20H10(self._config.get("gsm20h10", {})) as smu:
-                    smu.output_off()
-            except Exception:
-                pass
-            try:
-                with E36300Supply(self._config.get("e36300", {})) as supply:
-                    supply.output_off()
-            except Exception:
-                pass
+            gsm_cfg = dict(self._config.get("gsm20h10", {}))
+            e36_cfg = dict(self._config.get("e36300", {}))
+
+            def _panic_gsm() -> None:
+                try:
+                    with GSM20H10(gsm_cfg) as smu:
+                        smu.output_off()
+                except Exception:
+                    pass
+
+            def _panic_e36() -> None:
+                try:
+                    with E36300Supply(e36_cfg) as supply:
+                        supply.output_off()
+                except Exception:
+                    pass
+
+            t1 = threading.Thread(target=_panic_gsm, daemon=True)
+            t2 = threading.Thread(target=_panic_e36, daemon=True)
+            t1.start()
+            t2.start()
+            t1.join(timeout=3.0)
+            t2.join(timeout=3.0)
         event.accept()
 
     def _load_config(self, path: Path) -> dict:

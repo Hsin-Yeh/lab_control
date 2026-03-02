@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from datetime import datetime
 from pathlib import Path
+import threading
 import time
 
 import h5py
@@ -30,6 +31,7 @@ def run_tcspc_scan(
     output_dir: str = "output",
     angles: list[float] | None = None,
     acq_time_ms: int | None = None,
+    abort_event: threading.Event | None = None,
 ) -> dict:
     """Run angle-resolved TCSPC scan.
 
@@ -38,6 +40,7 @@ def run_tcspc_scan(
         output_dir: Root output directory (units: none).
         angles: List of stage angles (units: deg).
         acq_time_ms: Acquisition duration for each point (units: ms).
+        abort_event: Optional abort event checked each step (units: none).
     """
     with Path(config_path).open("r", encoding="utf-8") as handle:
         config = yaml.safe_load(handle)
@@ -57,6 +60,9 @@ def run_tcspc_scan(
         stage.home()
         with h5py.File(hdf5_path, "w") as hdf5_file:
             for angle in tqdm(scan_angles, desc="TCSPC Scan"):
+                if abort_event is not None and abort_event.is_set():
+                    logger.warning("TCSPC scan aborted at angle=%.2f deg", float(angle))
+                    break
                 stage.move_to(float(angle))
                 time.sleep(float(config["kdc101"].get("settle_time_s", 0.3)))
                 hist = tcspc.acquire(acq_time_ms)
@@ -92,7 +98,8 @@ def run_tcspc_scan(
                     rate_input,
                 )
 
-    save_csv(summary, str(out_subdir / "tcspc_summary.csv"))
+    if summary:
+        save_csv(summary, str(out_subdir / "tcspc_summary.csv"))
     return {"summary": summary, "hdf5_path": str(hdf5_path), "output_dir": str(out_subdir)}
 
 

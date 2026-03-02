@@ -15,7 +15,8 @@ def _install_fake_pm(monkeypatch, mocker, read_value=1e-5):
     fake_rm = mocker.Mock()
     fake_rm.open_resource.return_value = fake_raw
 
-    fake_pyvisa = types.SimpleNamespace(ResourceManager=mocker.Mock(return_value=fake_rm))
+    fake_pyvisa = types.ModuleType("pyvisa")
+    fake_pyvisa.ResourceManager = mocker.Mock(return_value=fake_rm)
 
     fake_pm = mocker.Mock()
     fake_pm.instrument = fake_raw
@@ -27,8 +28,11 @@ def _install_fake_pm(monkeypatch, mocker, read_value=1e-5):
 
     import sys
 
+    fake_thorlabs_pm100 = types.ModuleType("ThorlabsPM100")
+    fake_thorlabs_pm100.ThorlabsPM100 = ctor
+
     monkeypatch.setitem(sys.modules, "pyvisa", fake_pyvisa)
-    monkeypatch.setitem(sys.modules, "ThorlabsPM100", types.SimpleNamespace(ThorlabsPM100=ctor))
+    monkeypatch.setitem(sys.modules, "ThorlabsPM100", fake_thorlabs_pm100)
     return fake_pm
 
 

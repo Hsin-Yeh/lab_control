@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 import time
+from collections.abc import Callable
 
 from PySide6.QtCore import QThread, Signal
 
@@ -159,3 +160,68 @@ class ContinuousPollWorker(QThread):
         except Exception as exc:
             self.error.emit(str(exc))
             self.stopped.emit("error")
+
+
+class WriteCommandWorker(QThread):
+    """One-shot worker for a single instrument write command.
+
+    Parameters:
+        cls: Instrument class to instantiate (units: none).
+        cfg: Instrument config mapping (units: none).
+        command: Callable accepting the open instrument instance (units: none).
+    """
+
+    success = Signal()
+    error = Signal(str)
+
+    def __init__(self, cls: type, cfg: dict, command: Callable) -> None:
+        super().__init__()
+        self._cls = cls
+        self._cfg = cfg
+        self._command = command
+
+    def run(self) -> None:
+        """Execute command inside instrument context.
+
+        Parameters:
+            None (units: none).
+        """
+        try:
+            with self._cls(self._cfg) as inst:
+                self._command(inst)
+            self.success.emit()
+        except Exception as exc:
+            self.error.emit(str(exc))
+
+
+class PanicWorker(QThread):
+    """Fire-and-forget panic-off worker.
+
+    Connects to the instrument and calls output_off().
+    Emits done(ok, message) on completion.
+
+    Parameters:
+        cls: Instrument class to instantiate (units: none).
+        cfg: Instrument config mapping (units: none).
+    """
+
+    done = Signal(bool, str)
+
+    def __init__(self, cls: type, cfg: dict) -> None:
+        super().__init__()
+        self._cls = cls
+        self._cfg = cfg
+
+    def run(self) -> None:
+        """Attempt output_off and emit result.
+
+        Parameters:
+            None (units: none).
+        """
+        try:
+            with self._cls(self._cfg) as inst:
+                if hasattr(inst, "output_off"):
+                    inst.output_off()
+            self.done.emit(True, "Output OFF")
+        except Exception as exc:
+            self.done.emit(False, str(exc))

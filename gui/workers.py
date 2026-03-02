@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+import threading
 
 from PySide6.QtCore import QThread, Signal
 
@@ -28,12 +29,21 @@ class _BaseWorker(QThread):
 
     def __init__(self) -> None:
         super().__init__()
+        self._abort_event = threading.Event()
         self._relay = SignalRelay()
         self._relay.message.connect(self.log_message.emit)
         self._gui_handler = GuiLogHandler(self._relay)
         self._gui_handler.setFormatter(
             logging.Formatter("%(asctime)s | %(name)-20s | %(levelname)-8s | %(message)s")
         )
+
+    def request_abort(self) -> None:
+        """Signal the worker to stop at next checkpoint.
+
+        Parameters:
+            None (units: none).
+        """
+        self._abort_event.set()
 
     def _attach_logger(self, logger_name: str) -> None:
         """Attach GUI handler to logger.
@@ -100,6 +110,7 @@ class RotationSweepWorker(_BaseWorker):
                 start_deg=self._start_deg,
                 stop_deg=self._stop_deg,
                 step_deg=self._step_deg,
+                abort_event=self._abort_event,
             )
             self.progress.emit(1, 1)
             self.finished.emit(results)
@@ -155,6 +166,7 @@ class IVCurveWorker(_BaseWorker):
                 v_stop=self._v_stop,
                 v_step=self._v_step,
                 i_limit=self._i_limit,
+                abort_event=self._abort_event,
             )
             self.progress.emit(1, 1)
             self.finished.emit(results)
@@ -202,6 +214,7 @@ class TCSPCScanWorker(_BaseWorker):
                 output_dir=self._output_dir,
                 angles=self._angles,
                 acq_time_ms=self._acq_time_ms,
+                abort_event=self._abort_event,
             )
             summary = result.get("summary", []) if isinstance(result, dict) else []
             self.progress.emit(1, 1)

@@ -191,10 +191,13 @@ class InstrumentRow(QWidget):
             None (units: none).
         """
         if self.key == "kdc101":
-            return f"Serial: {self.cfg.get('serial', 'N/A')}"
+            serial = self.cfg.get("serial_number") or self.cfg.get("serial", "N/A")
+            return f"Serial: {serial}"
         if self.key == "picoharp300":
-            return f"DLL: {self.cfg.get('phlib_path', 'N/A')}"
-        return f"Resource: {self.cfg.get('visa_resource', 'N/A')}"
+            dll = self.cfg.get("dll_path") or self.cfg.get("phlib_path", "N/A")
+            return f"DLL: {dll}"
+        resource = self.cfg.get("resource") or self.cfg.get("visa_resource", "N/A")
+        return f"Resource: {resource}"
 
 
 class ConnectionsWidget(QWidget):

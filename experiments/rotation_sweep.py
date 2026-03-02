@@ -6,6 +6,7 @@ import argparse
 from datetime import datetime
 from pathlib import Path
 import sys
+import threading
 import time
 
 import numpy as np
@@ -32,6 +33,7 @@ def run_rotation_sweep(
     start_deg: float = 0.0,
     stop_deg: float = 360.0,
     step_deg: float = 5.0,
+    abort_event: threading.Event | None = None,
 ) -> list[dict]:
     """Run stage rotation sweep while measuring power.
 
@@ -41,6 +43,7 @@ def run_rotation_sweep(
         start_deg: Start angle (units: deg).
         stop_deg: Stop angle (units: deg).
         step_deg: Angle increment (units: deg).
+        abort_event: Optional abort event checked each step (units: none).
     """
     with Path(config_path).open("r", encoding="utf-8") as handle:
         config = yaml.safe_load(handle)
@@ -62,6 +65,9 @@ def run_rotation_sweep(
             pm.auto_range(True)
 
             for i, angle in enumerate(tqdm(angles, desc="Rotation Sweep")):
+                if abort_event is not None and abort_event.is_set():
+                    logger.warning("Sweep aborted at angle=%.2f deg", float(angle))
+                    break
                 stage.move_to(float(angle))
                 time.sleep(float(config["kdc101"].get("settle_time_s", 0.3)))
                 power = pm.read_power_average(n=int(config["pm100d"]["averaging_count"]))
@@ -82,9 +88,10 @@ def run_rotation_sweep(
 
     if results:
         powers = [row["power_W"] for row in results]
+        measured_angles = [row["angle_deg"] for row in results]
         save_csv(results, str(out_subdir / "rotation_sweep.csv"))
-        plot_power_vs_angle(angles, powers, save_path=str(out_subdir / "polar.png"))
-        plot_cartesian_power(angles, powers, save_path=str(out_subdir / "cartesian.png"))
+        plot_power_vs_angle(measured_angles, powers, save_path=str(out_subdir / "polar.png"))
+        plot_cartesian_power(measured_angles, powers, save_path=str(out_subdir / "cartesian.png"))
     logger.info("Sweep complete. %d points. Results in %s", len(results), out_subdir)
     return results
 

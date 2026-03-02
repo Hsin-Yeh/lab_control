@@ -138,16 +138,14 @@ class RotationSweepTab(QWidget):
         self._worker.start()
 
     def _on_abort(self) -> None:
-        """Abort by requesting worker termination.
+        """Abort by requesting cooperative worker stop.
 
         Parameters:
             None (units: none).
         """
         if self._worker is not None and self._worker.isRunning():
-            self._worker.terminate()
-            self._status.setText("Aborted")
-            self._run.setEnabled(True)
-            self._abort.setEnabled(False)
+            self._worker.request_abort()
+            self._status.setText("Aborting…")
 
     def _on_finished(self, results: list) -> None:
         """Update plot and state after completion.
