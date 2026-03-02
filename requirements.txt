@@ -1,0 +1,11 @@
+pylablib>=1.4.4
+pyvisa>=1.13
+pyvisa-py>=0.7
+ThorlabsPM100>=0.3
+pyyaml>=6.0
+numpy>=1.24
+matplotlib>=3.7
+tqdm>=4.65
+h5py>=3.9
+pytest>=7.4
+pytest-mock>=3.11

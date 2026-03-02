@@ -1,0 +1,12 @@
+[project]
+name = "lab_control"
+version = "0.1.0"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v"
+norecursedirs = ["tests/manual"]
+
+[tool.pylance]
+pythonVersion = "3.10"
