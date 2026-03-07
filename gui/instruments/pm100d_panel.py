@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+from collections import deque
+from datetime import datetime
 import math
+from pathlib import Path
 import threading
+import time
 
+import pyqtgraph as pg
 from PySide6.QtCore import QThread, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -21,6 +26,17 @@ from PySide6.QtWidgets import (
 
 from gui.instruments.workers import ConnectWorker, WriteCommandWorker
 from instruments.pm100d import PM100D
+
+
+def _power_to_dbm(power_w: float) -> float:
+    """Convert Watts to dBm.
+
+    Parameters:
+        power_w: Optical power (units: W).
+    """
+    if power_w <= 0.0:
+        return float("-inf")
+    return 10.0 * math.log10(power_w / 1e-3)
 
 
 class PM100DReadWorker(QThread):
@@ -48,7 +64,7 @@ class PM100DReadWorker(QThread):
         try:
             with PM100D(self._cfg) as pm:
                 power_w = float(pm.read_power())
-                power_dbm = float(pm.read_power_dbm())
+                power_dbm = _power_to_dbm(power_w)
                 payload = {
                     "power_W": power_w,
                     "power_dBm": power_dbm,
@@ -99,7 +115,7 @@ class PM100DContinuousReadWorker(QThread):
             with PM100D(self._cfg) as pm:
                 while not self._abort_event.is_set():
                     avg_w = float(pm.read_power_average(self._average_n))
-                    avg_dbm = float("-inf") if avg_w <= 0.0 else 10.0 * math.log10(avg_w / 1e-3)
+                    avg_dbm = _power_to_dbm(avg_w)
                     self.data.emit(
                         {
                             "power_W": avg_w,
@@ -132,6 +148,10 @@ class PM100DPanel(QWidget):
         self._read_worker: PM100DReadWorker | None = None
         self._continuous_worker: PM100DContinuousReadWorker | None = None
         self._is_connected: bool = False
+        self._live_csv_path: Path | None = None
+
+        self._history_t: deque[float] = deque(maxlen=300)
+        self._history_w: deque[float] = deque(maxlen=300)
 
         self._wavelength = QDoubleSpinBox(self)
         self._wavelength.setRange(400.0, 1100.0)
@@ -153,6 +173,7 @@ class PM100DPanel(QWidget):
 
         self._auto_range = QCheckBox("Auto range", self)
         self._auto_range.setChecked(True)
+        self._log_csv = QCheckBox("Log to CSV while continuous", self)
 
         self._connect_btn = QPushButton("Connect", self)
         self._disconnect_btn = QPushButton("Disconnect", self)
@@ -169,6 +190,16 @@ class PM100DPanel(QWidget):
         self._power_label = QLabel("Power: 0.0000e+00 W", self)
         self._dbm_label = QLabel("dBm: -inf", self)
         self._avg_label = QLabel("Average: n/a", self)
+        self._stats_mean_label = QLabel("Mean: n/a", self)
+        self._stats_min_label = QLabel("Min: n/a", self)
+        self._stats_max_label = QLabel("Max: n/a", self)
+        self._stats_std_label = QLabel("Std: n/a", self)
+        self._csv_label = QLabel("CSV: (disabled)", self)
+
+        self._trend_plot = pg.PlotWidget(self)
+        self._trend_plot.setLabel("left", "Power", units="W")
+        self._trend_plot.setLabel("bottom", "Time", units="s")
+        self._trend_curve = self._trend_plot.plot([], [], pen=pg.mkPen("y", width=2))
 
         form = QFormLayout()
         form.addRow("Wavelength (nm)", self._wavelength)
@@ -176,6 +207,7 @@ class PM100DPanel(QWidget):
         form.addRow("Average samples", self._average_samples)
         form.addRow("Poll interval (ms)", self._poll_interval_ms)
         form.addRow("", self._auto_range)
+        form.addRow("", self._log_csv)
 
         left = QVBoxLayout()
         left.addLayout(form)
@@ -208,6 +240,12 @@ class PM100DPanel(QWidget):
         right.addWidget(self._power_label)
         right.addWidget(self._dbm_label)
         right.addWidget(self._avg_label)
+        right.addWidget(self._stats_mean_label)
+        right.addWidget(self._stats_min_label)
+        right.addWidget(self._stats_max_label)
+        right.addWidget(self._stats_std_label)
+        right.addWidget(self._csv_label)
+        right.addWidget(self._trend_plot, 1)
         right.addStretch(1)
 
         main = QHBoxLayout(self)
@@ -266,6 +304,7 @@ class PM100DPanel(QWidget):
         self._is_connected = False
         self._id_label.setText("ID: (not connected)")
         self._status_label.setText("Status: disconnected")
+        self._csv_label.setText("CSV: (disabled)")
 
     def _on_apply(self) -> None:
         """Apply PM settings with a one-shot worker.
@@ -357,6 +396,15 @@ class PM100DPanel(QWidget):
         if self._continuous_worker is not None and self._continuous_worker.isRunning():
             return
 
+        if self._log_csv.isChecked():
+            stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            self._live_csv_path = Path("output") / f"pm100d_live_{stamp}.csv"
+            self._live_csv_path.parent.mkdir(parents=True, exist_ok=True)
+            self._csv_label.setText(f"CSV: {self._live_csv_path.as_posix()}")
+        else:
+            self._live_csv_path = None
+            self._csv_label.setText("CSV: (disabled)")
+
         self._continuous_worker = PM100DContinuousReadWorker(
             self._config,
             average_n=int(self._average_samples.value()),
@@ -410,3 +458,61 @@ class PM100DPanel(QWidget):
             self._avg_label.setText(f"Average: {float(payload['average_W']):.4e} W")
         else:
             self._avg_label.setText("Average: n/a")
+
+        timestamp_s = float(payload.get("timestamp_s", time.time()))
+        self._history_t.append(timestamp_s)
+        self._history_w.append(power_w)
+        self._refresh_trend_and_stats()
+
+        if self._continuous_worker is not None and self._continuous_worker.isRunning() and self._log_csv.isChecked():
+            self._append_live_csv(timestamp_s, power_w, power_dbm)
+
+    def _refresh_trend_and_stats(self) -> None:
+        """Update PM monitor trend and rolling statistics labels.
+
+        Parameters:
+            None (units: none).
+        """
+        if not self._history_t:
+            self._trend_curve.setData([], [])
+            self._stats_mean_label.setText("Mean: n/a")
+            self._stats_min_label.setText("Min: n/a")
+            self._stats_max_label.setText("Max: n/a")
+            self._stats_std_label.setText("Std: n/a")
+            return
+
+        t0 = self._history_t[0]
+        x = [value - t0 for value in self._history_t]
+        y = list(self._history_w)
+        self._trend_curve.setData(x, y)
+
+        mean_w = sum(y) / len(y)
+        min_w = min(y)
+        max_w = max(y)
+        if len(y) > 1:
+            variance = sum((value - mean_w) ** 2 for value in y) / len(y)
+            std_w = variance ** 0.5
+        else:
+            std_w = 0.0
+
+        self._stats_mean_label.setText(f"Mean: {mean_w:.4e} W")
+        self._stats_min_label.setText(f"Min: {min_w:.4e} W")
+        self._stats_max_label.setText(f"Max: {max_w:.4e} W")
+        self._stats_std_label.setText(f"Std: {std_w:.4e} W")
+
+    def _append_live_csv(self, timestamp_s: float, power_w: float, power_dbm: float) -> None:
+        """Append one PM100D continuous sample to CSV.
+
+        Parameters:
+            timestamp_s: Epoch timestamp (units: s).
+            power_w: Measured optical power (units: W).
+            power_dbm: Measured optical power (units: dBm).
+        """
+        if self._live_csv_path is None:
+            return
+
+        exists = self._live_csv_path.exists()
+        with self._live_csv_path.open("a", encoding="utf-8") as handle:
+            if not exists:
+                handle.write("timestamp_s,power_W,power_dBm\n")
+            handle.write(f"{timestamp_s:.6f},{power_w:.9e},{power_dbm:.6f}\n")

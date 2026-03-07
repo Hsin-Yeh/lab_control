@@ -75,10 +75,13 @@ class KinesisPanel(QWidget):
 
         self._stage_connected = False
         self._flipper_connected = False
+        self._stage_busy = False
+        self._flipper_busy = False
 
         self._build_ui()
         self._wire_signals()
         self._apply_platform_availability()
+        self._refresh_controls()
 
     def _build_ui(self) -> None:
         self._stage_target_deg = QDoubleSpinBox(self)
@@ -212,6 +215,55 @@ class KinesisPanel(QWidget):
                 button.setEnabled(False)
             self._flipper_status.setText("Status: unavailable on this platform")
 
+    def _refresh_controls(self) -> None:
+        """Refresh button states from current connectivity and busy flags.
+
+        Parameters:
+            None (units: none).
+        """
+        stage_available = bool(KDC101_AVAILABLE and KDC101Stage is not None)
+        flipper_available = bool(FLIPPER_AVAILABLE and KinesisFlipper is not None)
+
+        self._stage_target_deg.setEnabled(stage_available and self._stage_connected and not self._stage_busy)
+        self._stage_connect_btn.setEnabled(stage_available and not self._stage_connected and not self._stage_busy)
+        self._stage_disconnect_btn.setEnabled(stage_available and self._stage_connected and not self._stage_busy)
+        self._stage_home_btn.setEnabled(stage_available and self._stage_connected and not self._stage_busy)
+        self._stage_move_btn.setEnabled(stage_available and self._stage_connected and not self._stage_busy)
+        self._stage_stop_btn.setEnabled(stage_available and self._stage_connected and not self._stage_busy)
+        self._stage_read_btn.setEnabled(stage_available and self._stage_connected and not self._stage_busy)
+
+        self._flipper_position.setEnabled(flipper_available and self._flipper_connected and not self._flipper_busy)
+        self._flipper_connect_btn.setEnabled(flipper_available and not self._flipper_connected and not self._flipper_busy)
+        self._flipper_disconnect_btn.setEnabled(flipper_available and self._flipper_connected and not self._flipper_busy)
+        self._flipper_set_btn.setEnabled(flipper_available and self._flipper_connected and not self._flipper_busy)
+        self._flipper_toggle_btn.setEnabled(flipper_available and self._flipper_connected and not self._flipper_busy)
+        self._flipper_home_btn.setEnabled(flipper_available and self._flipper_connected and not self._flipper_busy)
+        self._flipper_read_btn.setEnabled(flipper_available and self._flipper_connected and not self._flipper_busy)
+
+    def _set_stage_busy(self, busy: bool, status: str | None = None) -> None:
+        """Set stage busy flag and refresh controls.
+
+        Parameters:
+            busy: Busy state value (units: boolean).
+            status: Optional status line override (units: none).
+        """
+        self._stage_busy = bool(busy)
+        if status is not None:
+            self._stage_status.setText(status)
+        self._refresh_controls()
+
+    def _set_flipper_busy(self, busy: bool, status: str | None = None) -> None:
+        """Set flipper busy flag and refresh controls.
+
+        Parameters:
+            busy: Busy state value (units: boolean).
+            status: Optional status line override (units: none).
+        """
+        self._flipper_busy = bool(busy)
+        if status is not None:
+            self._flipper_status.setText(status)
+        self._refresh_controls()
+
     def set_config(self, config: dict) -> None:
         """Update panel config values.
 
@@ -222,12 +274,17 @@ class KinesisPanel(QWidget):
         self._flipper_cfg = dict(config.get("flipper", {}))
         self._on_stage_disconnect()
         self._on_flipper_disconnect()
+        self._refresh_controls()
 
     def _on_stage_connect(self) -> None:
         if not KDC101_AVAILABLE or KDC101Stage is None:
             return
+        if self._stage_busy:
+            return
+        self._set_stage_busy(True, "Status: connecting")
         self._stage_connect_worker = ConnectWorker(KDC101Stage, self._stage_cfg)
         self._stage_connect_worker.connected.connect(self._on_stage_connected)
+        self._stage_connect_worker.finished.connect(lambda: self._set_stage_busy(False))
         self._stage_connect_worker.start()
 
     def _on_stage_connected(self, ok: bool, message: str) -> None:
@@ -244,6 +301,7 @@ class KinesisPanel(QWidget):
         else:
             self._stage_status.setText("Status: connect failed")
             QMessageBox.warning(self, "KDC101 Connect Failed", message)
+        self._refresh_controls()
 
     def _on_stage_disconnect(self) -> None:
         """Clear stage state labels.
@@ -256,22 +314,30 @@ class KinesisPanel(QWidget):
         if KDC101_AVAILABLE and KDC101Stage is not None:
             self._stage_status.setText("Status: disconnected")
         self._stage_angle.setText("Angle: n/a")
+        self._set_stage_busy(False)
 
     def _on_stage_home(self) -> None:
         if not self._stage_connected:
             QMessageBox.information(self, "KDC101", "Connect to KDC101 first.")
             return
+        if self._stage_busy:
+            return
+        self._set_stage_busy(True, "Status: homing")
         self._stage_write_worker = WriteCommandWorker(KDC101Stage, self._stage_cfg, lambda inst: inst.home())
         self._stage_write_worker.success.connect(lambda: self._stage_status.setText("Status: homed"))
         self._stage_write_worker.success.connect(self._on_stage_read)
         self._stage_write_worker.error.connect(lambda message: QMessageBox.warning(self, "KDC101 Home Failed", message))
+        self._stage_write_worker.finished.connect(lambda: self._set_stage_busy(False))
         self._stage_write_worker.start()
 
     def _on_stage_move(self) -> None:
         if not self._stage_connected:
             QMessageBox.information(self, "KDC101", "Connect to KDC101 first.")
             return
+        if self._stage_busy:
+            return
         target = float(self._stage_target_deg.value())
+        self._set_stage_busy(True, f"Status: moving to {target:.3f} deg")
         self._stage_write_worker = WriteCommandWorker(
             KDC101Stage,
             self._stage_cfg,
@@ -282,21 +348,29 @@ class KinesisPanel(QWidget):
         )
         self._stage_write_worker.success.connect(self._on_stage_read)
         self._stage_write_worker.error.connect(lambda message: QMessageBox.warning(self, "KDC101 Move Failed", message))
+        self._stage_write_worker.finished.connect(lambda: self._set_stage_busy(False))
         self._stage_write_worker.start()
 
     def _on_stage_stop(self) -> None:
         if not self._stage_connected:
             QMessageBox.information(self, "KDC101", "Connect to KDC101 first.")
             return
+        if self._stage_busy:
+            return
+        self._set_stage_busy(True, "Status: stop requested")
         self._stage_write_worker = WriteCommandWorker(KDC101Stage, self._stage_cfg, lambda inst: inst.stop())
         self._stage_write_worker.success.connect(lambda: self._stage_status.setText("Status: stop requested"))
         self._stage_write_worker.error.connect(lambda message: QMessageBox.warning(self, "KDC101 Stop Failed", message))
+        self._stage_write_worker.finished.connect(lambda: self._set_stage_busy(False))
         self._stage_write_worker.start()
 
     def _on_stage_read(self) -> None:
         if not self._stage_connected:
             QMessageBox.information(self, "KDC101", "Connect to KDC101 first.")
             return
+        if self._stage_busy:
+            return
+        self._set_stage_busy(True, "Status: reading angle")
         self._stage_query_worker = KinesisQueryWorker(
             KDC101Stage,
             self._stage_cfg,
@@ -306,6 +380,7 @@ class KinesisPanel(QWidget):
         self._stage_query_worker.error.connect(
             lambda message: QMessageBox.warning(self, "KDC101 Read Failed", message)
         )
+        self._stage_query_worker.finished.connect(lambda: self._set_stage_busy(False))
         self._stage_query_worker.start()
 
     def _on_stage_data(self, payload: dict) -> None:
@@ -316,12 +391,18 @@ class KinesisPanel(QWidget):
         """
         angle_deg = float(payload.get("angle_deg", 0.0))
         self._stage_angle.setText(f"Angle: {angle_deg:.3f} deg")
+        if self._stage_connected:
+            self._stage_status.setText("Status: connected")
 
     def _on_flipper_connect(self) -> None:
         if not FLIPPER_AVAILABLE or KinesisFlipper is None:
             return
+        if self._flipper_busy:
+            return
+        self._set_flipper_busy(True, "Status: connecting")
         self._flipper_connect_worker = ConnectWorker(KinesisFlipper, self._flipper_cfg)
         self._flipper_connect_worker.connected.connect(self._on_flipper_connected)
+        self._flipper_connect_worker.finished.connect(lambda: self._set_flipper_busy(False))
         self._flipper_connect_worker.start()
 
     def _on_flipper_connected(self, ok: bool, message: str) -> None:
@@ -338,6 +419,7 @@ class KinesisPanel(QWidget):
         else:
             self._flipper_status.setText("Status: connect failed")
             QMessageBox.warning(self, "Flipper Connect Failed", message)
+        self._refresh_controls()
 
     def _on_flipper_disconnect(self) -> None:
         """Clear flipper state labels.
@@ -350,12 +432,16 @@ class KinesisPanel(QWidget):
         if FLIPPER_AVAILABLE and KinesisFlipper is not None:
             self._flipper_status.setText("Status: disconnected")
         self._flipper_pos_label.setText("Position: n/a")
+        self._set_flipper_busy(False)
 
     def _on_flipper_set(self) -> None:
         if not self._flipper_connected:
             QMessageBox.information(self, "Flipper", "Connect to flipper first.")
             return
+        if self._flipper_busy:
+            return
         position = int(self._flipper_position.currentText())
+        self._set_flipper_busy(True, f"Status: moving to position {position}")
         self._flipper_write_worker = WriteCommandWorker(
             KinesisFlipper,
             self._flipper_cfg,
@@ -368,12 +454,16 @@ class KinesisPanel(QWidget):
         self._flipper_write_worker.error.connect(
             lambda message: QMessageBox.warning(self, "Flipper Move Failed", message)
         )
+        self._flipper_write_worker.finished.connect(lambda: self._set_flipper_busy(False))
         self._flipper_write_worker.start()
 
     def _on_flipper_toggle(self) -> None:
         if not self._flipper_connected:
             QMessageBox.information(self, "Flipper", "Connect to flipper first.")
             return
+        if self._flipper_busy:
+            return
+        self._set_flipper_busy(True, "Status: toggling")
         self._flipper_write_worker = WriteCommandWorker(
             KinesisFlipper,
             self._flipper_cfg,
@@ -384,12 +474,16 @@ class KinesisPanel(QWidget):
         self._flipper_write_worker.error.connect(
             lambda message: QMessageBox.warning(self, "Flipper Toggle Failed", message)
         )
+        self._flipper_write_worker.finished.connect(lambda: self._set_flipper_busy(False))
         self._flipper_write_worker.start()
 
     def _on_flipper_home(self) -> None:
         if not self._flipper_connected:
             QMessageBox.information(self, "Flipper", "Connect to flipper first.")
             return
+        if self._flipper_busy:
+            return
+        self._set_flipper_busy(True, "Status: homing")
         self._flipper_write_worker = WriteCommandWorker(
             KinesisFlipper,
             self._flipper_cfg,
@@ -400,12 +494,16 @@ class KinesisPanel(QWidget):
         self._flipper_write_worker.error.connect(
             lambda message: QMessageBox.warning(self, "Flipper Home Failed", message)
         )
+        self._flipper_write_worker.finished.connect(lambda: self._set_flipper_busy(False))
         self._flipper_write_worker.start()
 
     def _on_flipper_read(self) -> None:
         if not self._flipper_connected:
             QMessageBox.information(self, "Flipper", "Connect to flipper first.")
             return
+        if self._flipper_busy:
+            return
+        self._set_flipper_busy(True, "Status: reading position")
         self._flipper_query_worker = KinesisQueryWorker(
             KinesisFlipper,
             self._flipper_cfg,
@@ -415,6 +513,7 @@ class KinesisPanel(QWidget):
         self._flipper_query_worker.error.connect(
             lambda message: QMessageBox.warning(self, "Flipper Read Failed", message)
         )
+        self._flipper_query_worker.finished.connect(lambda: self._set_flipper_busy(False))
         self._flipper_query_worker.start()
 
     def _on_flipper_data(self, payload: dict) -> None:
@@ -426,3 +525,5 @@ class KinesisPanel(QWidget):
         position = int(payload.get("position", 1))
         self._flipper_pos_label.setText(f"Position: {position}")
         self._flipper_position.setCurrentText(str(position))
+        if self._flipper_connected:
+            self._flipper_status.setText("Status: connected")

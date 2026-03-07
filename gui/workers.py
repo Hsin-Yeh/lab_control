@@ -9,6 +9,8 @@ import threading
 from PySide6.QtCore import QThread, Signal
 
 from experiments.iv_curve import run_iv_curve
+from experiments.gsm_monitor import run_gsm_monitor
+from experiments.resistance_log import run_resistance_log
 from experiments.rotation_sweep import run_rotation_sweep
 from experiments.tcspc_scan import run_tcspc_scan
 from gui.widgets.log_viewer import GuiLogHandler, SignalRelay
@@ -219,6 +221,122 @@ class TCSPCScanWorker(_BaseWorker):
             summary = result.get("summary", []) if isinstance(result, dict) else []
             self.progress.emit(1, 1)
             self.finished.emit(summary)
+        except Exception as exc:
+            self.error.emit(str(exc))
+        finally:
+            self._detach_logger(logger_name)
+
+
+class ResistanceLogWorker(_BaseWorker):
+    """Worker that runs long-term resistance logging.
+
+    Parameters:
+        config_path: YAML configuration path (units: none).
+        output_dir: Output directory path (units: none).
+        source_voltage_v: Fixed source voltage (units: V).
+        current_limit_a: Current compliance limit (units: A).
+        interval_s: Sampling interval (units: s).
+        duration_s: Total duration (units: s).
+        compliance_stop: Enable compliance-based stop (units: boolean).
+    """
+
+    def __init__(
+        self,
+        config_path: str,
+        output_dir: str,
+        source_voltage_v: float,
+        current_limit_a: float,
+        interval_s: float,
+        duration_s: float,
+        compliance_stop: bool,
+    ) -> None:
+        super().__init__()
+        self._config_path = config_path
+        self._output_dir = str(Path(output_dir))
+        self._source_voltage_v = source_voltage_v
+        self._current_limit_a = current_limit_a
+        self._interval_s = interval_s
+        self._duration_s = duration_s
+        self._compliance_stop = compliance_stop
+
+    def run(self) -> None:
+        """Execute resistance logging in worker thread.
+
+        Parameters:
+            None (units: none).
+        """
+        logger_name = "resistance_log"
+        self._attach_logger(logger_name)
+        self.status_text.emit("Running resistance log")
+        try:
+            results = run_resistance_log(
+                config_path=self._config_path,
+                output_dir=self._output_dir,
+                source_voltage_v=self._source_voltage_v,
+                current_limit_a=self._current_limit_a,
+                interval_s=self._interval_s,
+                duration_s=self._duration_s,
+                compliance_stop=self._compliance_stop,
+                abort_event=self._abort_event,
+                progress_callback=lambda cur, total: self.progress.emit(int(cur), int(total)),
+            )
+            self.finished.emit(results)
+        except Exception as exc:
+            self.error.emit(str(exc))
+        finally:
+            self._detach_logger(logger_name)
+
+
+class GSMMonitorWorker(_BaseWorker):
+    """Worker that runs GSM continuous monitor experiment.
+
+    Parameters:
+        config_path: YAML configuration path (units: none).
+        output_dir: Output directory path (units: none).
+        source_voltage_v: Fixed source voltage (units: V).
+        current_limit_a: Current compliance limit (units: A).
+        interval_s: Sampling interval (units: s).
+        duration_s: Total duration (units: s).
+    """
+
+    def __init__(
+        self,
+        config_path: str,
+        output_dir: str,
+        source_voltage_v: float,
+        current_limit_a: float,
+        interval_s: float,
+        duration_s: float,
+    ) -> None:
+        super().__init__()
+        self._config_path = config_path
+        self._output_dir = str(Path(output_dir))
+        self._source_voltage_v = source_voltage_v
+        self._current_limit_a = current_limit_a
+        self._interval_s = interval_s
+        self._duration_s = duration_s
+
+    def run(self) -> None:
+        """Execute GSM monitor run in worker thread.
+
+        Parameters:
+            None (units: none).
+        """
+        logger_name = "gsm_monitor"
+        self._attach_logger(logger_name)
+        self.status_text.emit("Running GSM monitor")
+        try:
+            results = run_gsm_monitor(
+                config_path=self._config_path,
+                output_dir=self._output_dir,
+                source_voltage_v=self._source_voltage_v,
+                current_limit_a=self._current_limit_a,
+                interval_s=self._interval_s,
+                duration_s=self._duration_s,
+                abort_event=self._abort_event,
+                progress_callback=lambda cur, total: self.progress.emit(int(cur), int(total)),
+            )
+            self.finished.emit(results)
         except Exception as exc:
             self.error.emit(str(exc))
         finally:

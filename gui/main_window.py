@@ -25,7 +25,9 @@ from gui.instruments.e36300_panel import E36300Panel
 from gui.instruments.gsm20h10_panel import GSM20H10Panel
 from gui.instruments.kinesis_panel import KinesisPanel
 from gui.instruments.pm100d_panel import PM100DPanel
+from gui.tabs.gsm_monitor_tab import GSMMonitorTab
 from gui.tabs.iv_curve_tab import IVCurveTab
+from gui.tabs.resistance_log_tab import ResistanceLogTab
 from gui.tabs.rotation_sweep_tab import RotationSweepTab
 from gui.tabs.tcspc_scan_tab import TCSPCScanTab
 from gui.widgets.config_editor import ConfigEditorWidget
@@ -76,10 +78,14 @@ class MainWindow(QMainWindow):
         self._rotation_tab = RotationSweepTab(str(self._config_path), self)
         self._iv_tab = IVCurveTab(str(self._config_path), self)
         self._tcspc_tab = TCSPCScanTab(str(self._config_path), self)
+        self._resistance_log_tab = ResistanceLogTab(str(self._config_path), self)
+        self._gsm_monitor_tab = GSMMonitorTab(str(self._config_path), self)
 
         self._experiments_widget = QTabWidget(self)
         self._experiments_widget.addTab(self._rotation_tab, "Rotation Sweep")
         self._experiments_widget.addTab(self._iv_tab, "I-V Curve")
+        self._experiments_widget.addTab(self._resistance_log_tab, "Resistance Log")
+        self._experiments_widget.addTab(self._gsm_monitor_tab, "GSM Monitor")
         self._experiments_widget.addTab(self._tcspc_tab, "TCSPC Scan")
 
         self._gsm_panel = GSM20H10Panel(self._config.get("gsm20h10", {}), self)
@@ -104,6 +110,8 @@ class MainWindow(QMainWindow):
 
         self._rotation_tab.log_message.connect(self._log_viewer.append_message)
         self._iv_tab.log_message.connect(self._log_viewer.append_message)
+        self._resistance_log_tab.log_message.connect(self._log_viewer.append_message)
+        self._gsm_monitor_tab.log_message.connect(self._log_viewer.append_message)
         self._tcspc_tab.log_message.connect(self._log_viewer.append_message)
 
         self._config_editor.config_saved.connect(self._on_config_saved)
@@ -211,6 +219,8 @@ class MainWindow(QMainWindow):
         cfg_str = self._config_path.as_posix()
         self._rotation_tab.set_config_path(cfg_str)
         self._iv_tab.set_config_path(cfg_str)
+        self._resistance_log_tab.set_config_path(cfg_str)
+        self._gsm_monitor_tab.set_config_path(cfg_str)
         self._tcspc_tab.set_config_path(cfg_str)
         self._connections.set_config(cfg_str)
         self._config_editor.set_config_path(cfg_str)

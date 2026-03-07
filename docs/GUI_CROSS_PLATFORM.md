@@ -230,6 +230,13 @@ Use this in experiment tabs when user clicks output dir label.
 
 **Acceptance**: `pytest tests/test_gui_smoke.py -v` passes on Mac.
 
+If running tests from a headless macOS shell session, GUI smoke tests are skipped by default to avoid Qt abort during `QApplication` startup.
+Run full GUI smoke tests from an active desktop session with:
+
+```bash
+LAB_CONTROL_GUI_TESTS=1 python -m pytest tests/test_gui_smoke.py -v
+```
+
 ### Phase 2: Windows VM testing (optional pre-deployment)
 If you have access to a Windows VM:
 1. Install drivers (VISA, Kinesis, PHLib)

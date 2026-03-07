@@ -23,6 +23,12 @@ def qapp():
     Parameters:
         None (units: none).
     """
+    if sys.platform == "darwin" and os.environ.get("LAB_CONTROL_GUI_TESTS", "0") != "1":
+        pytest.skip(
+            "Skipping Qt GUI smoke on macOS in headless mode. "
+            "Set LAB_CONTROL_GUI_TESTS=1 when running from an active GUI session."
+        )
+
     from PySide6.QtWidgets import QApplication
 
     app = QApplication.instance() or QApplication([])
@@ -184,7 +190,40 @@ def test_main_window_opens(qapp, mac_config):
 
     window = MainWindow(config_path=mac_config)
     assert window is not None
+    exp_labels = [window._experiments_widget.tabText(i) for i in range(window._experiments_widget.count())]
+    assert "Resistance Log" in exp_labels
+    assert "GSM Monitor" in exp_labels
     tab_labels = [window._instruments_widget.tabText(i) for i in range(window._instruments_widget.count())]
     assert "PM100D" in tab_labels
     assert "Kinesis" in tab_labels
     window.close()
+
+
+def test_resistance_log_tab_builds(qapp, mac_config):
+    """Resistance log tab constructs in simulate mode.
+
+    Parameters:
+        qapp: QApplication fixture (units: none).
+        mac_config: Temporary config path (units: none).
+    """
+    _ = qapp
+    from gui.tabs.resistance_log_tab import ResistanceLogTab
+
+    tab = ResistanceLogTab(mac_config)
+    assert tab._run is not None
+    assert tab._abort is not None
+
+
+def test_gsm_monitor_tab_builds(qapp, mac_config):
+    """GSM monitor tab constructs in simulate mode.
+
+    Parameters:
+        qapp: QApplication fixture (units: none).
+        mac_config: Temporary config path (units: none).
+    """
+    _ = qapp
+    from gui.tabs.gsm_monitor_tab import GSMMonitorTab
+
+    tab = GSMMonitorTab(mac_config)
+    assert tab._run is not None
+    assert tab._abort is not None
