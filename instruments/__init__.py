@@ -17,6 +17,7 @@ __all__ = [
     "E36300Supply",
     "GSM20H10",
     "PicoHarp300",
+    "KinesisFlipper",
 ]
 
 
@@ -40,3 +41,4 @@ PM100D = _safe_import("pm100d", "PM100D")
 E36300Supply = _safe_import("e36300", "E36300Supply")
 GSM20H10 = _safe_import("gsm20h10", "GSM20H10")
 PicoHarp300 = _safe_import("picoharp300", "PicoHarp300")
+KinesisFlipper = _safe_import("flipper", "KinesisFlipper")

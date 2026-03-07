@@ -7,6 +7,7 @@ Python-based laboratory automation system for photonics/optics research.
 | Variable | Class           | Interface        | Description                   |
 |----------|-----------------|------------------|-------------------------------|
 | `stage`  | `KDC101Stage`   | Thorlabs Kinesis | Rotation stage controller     |
+| `flipper`| `KinesisFlipper`| Thorlabs Kinesis | Optical filter flipper        |
 | `pm`     | `PM100D`        | USBTMC / pyvisa  | Optical power meter           |
 | `supply` | `E36300Supply`  | VISA / SCPI      | Triple-output power supply    |
 | `smu`    | `GSM20H10`      | VISA / SCPI      | Source-measure unit (±210V)   |
@@ -80,6 +81,7 @@ pytest tests -v
 
 # Run manual live tests when hardware connected
 python tests/manual/test_kdc101_live.py
+python tests/manual/test_flipper_live.py
 python tests/manual/test_pm100d_live.py
 python tests/manual/test_e36300_live.py
 python tests/manual/test_gsm20h10_live.py

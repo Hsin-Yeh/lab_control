@@ -16,6 +16,7 @@ from instruments.gsm20h10 import GSM20H10
 from instruments.kdc101 import KDC101Stage
 from instruments.pm100d import PM100D
 from instruments.picoharp300 import PicoHarp300
+from instruments.flipper import KinesisFlipper
 
 
 def _print_banner() -> None:
@@ -87,6 +88,7 @@ def check_config(config_path: str = "config/instruments.yaml") -> None:
 
     checks = [
         ("kdc101", KDC101Stage),
+        ("flipper", KinesisFlipper),
         ("pm100d", PM100D),
         ("e36300", E36300Supply),
         ("gsm20h10", GSM20H10),

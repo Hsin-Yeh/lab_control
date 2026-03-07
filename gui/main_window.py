@@ -23,6 +23,8 @@ from instruments.e36300 import E36300Supply
 from instruments.gsm20h10 import GSM20H10
 from gui.instruments.e36300_panel import E36300Panel
 from gui.instruments.gsm20h10_panel import GSM20H10Panel
+from gui.instruments.kinesis_panel import KinesisPanel
+from gui.instruments.pm100d_panel import PM100DPanel
 from gui.tabs.iv_curve_tab import IVCurveTab
 from gui.tabs.rotation_sweep_tab import RotationSweepTab
 from gui.tabs.tcspc_scan_tab import TCSPCScanTab
@@ -82,7 +84,11 @@ class MainWindow(QMainWindow):
 
         self._gsm_panel = GSM20H10Panel(self._config.get("gsm20h10", {}), self)
         self._e36300_panel = E36300Panel(self._config.get("e36300", {}), self)
+        self._pm100d_panel = PM100DPanel(self._config.get("pm100d", {}), self)
+        self._kinesis_panel = KinesisPanel(self._config, self)
         self._instruments_widget = QTabWidget(self)
+        self._instruments_widget.addTab(self._pm100d_panel, "PM100D")
+        self._instruments_widget.addTab(self._kinesis_panel, "Kinesis")
         self._instruments_widget.addTab(self._gsm_panel, "GSM20H10")
         self._instruments_widget.addTab(self._e36300_panel, "E36300")
 
@@ -210,4 +216,6 @@ class MainWindow(QMainWindow):
         self._config_editor.set_config_path(cfg_str)
         self._gsm_panel.set_config(self._config.get("gsm20h10", {}))
         self._e36300_panel.set_config(self._config.get("e36300", {}))
+        self._pm100d_panel.set_config(self._config.get("pm100d", {}))
+        self._kinesis_panel.set_config(self._config)
         self._set_path_label()

@@ -9,7 +9,7 @@ import pytest
 from instruments.pm100d import PM100D
 
 
-def _install_fake_pm(monkeypatch, mocker, read_value=1e-5):
+def _install_fake_pm(monkeypatch, mocker, read_value=1e-5, raw_attr: str = "instrument"):
     fake_raw = mocker.Mock()
     fake_raw.query.return_value = "THORLABS,PM100D,SN,1.0\n"
     fake_rm = mocker.Mock()
@@ -19,7 +19,7 @@ def _install_fake_pm(monkeypatch, mocker, read_value=1e-5):
     fake_pyvisa.ResourceManager = mocker.Mock(return_value=fake_rm)
 
     fake_pm = mocker.Mock()
-    fake_pm.instrument = fake_raw
+    setattr(fake_pm, raw_attr, fake_raw)
     fake_pm.read = read_value
 
     def ctor(inst):
@@ -76,3 +76,10 @@ def test_simulate_read_power():
     meter = PM100D({"simulate": True, "wavelength_nm": 780.0, "averaging_count": 10})
     meter.connect()
     assert meter.read_power() > 0.0
+
+
+def test_connect_with_private_inst_handle(monkeypatch, mocker):
+    _install_fake_pm(monkeypatch, mocker, read_value=1e-6, raw_attr="_inst")
+    meter = PM100D({"simulate": False, "visa_resource": "USB::INSTR", "wavelength_nm": 780.0, "averaging_count": 10})
+    meter.connect()
+    assert meter.instrument_id.startswith("THORLABS,PM100D")

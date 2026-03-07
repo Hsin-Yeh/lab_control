@@ -12,6 +12,9 @@ import numpy as np
 from .base import BaseInstrument, InstrumentCommandError, InstrumentConnectionError
 
 HISTCHAN = 65536
+MODE_HIST = 0
+MODE_T2 = 2
+MODE_T3 = 3
 
 
 class PicoHarp300(BaseInstrument):
@@ -42,7 +45,7 @@ class PicoHarp300(BaseInstrument):
 
         err_buf = ctypes.create_string_buffer(40)
         try:
-            self._dll.PH_GetErrorString(retcode, err_buf)
+            self._dll.PH_GetErrorString(err_buf, retcode)
             response = err_buf.value.decode(errors="replace")
         except Exception:
             response = f"retcode={retcode}"
@@ -69,7 +72,52 @@ class PicoHarp300(BaseInstrument):
 
         serial_buf = ctypes.create_string_buffer(8)
         self._check(self._dll.PH_OpenDevice(dev_idx, serial_buf), "OpenDevice")
-        self._check(self._dll.PH_Initialize(dev_idx, 0), "Initialize")
+
+        configured_mode = self.config.get("mode", "hist")
+        fallback_enabled = bool(self.config.get("init_mode_fallback", True))
+
+        mode_map = {"hist": MODE_HIST, "t2": MODE_T2, "t3": MODE_T3}
+        if isinstance(configured_mode, str):
+            key = configured_mode.strip().lower()
+            if key not in mode_map:
+                raise ValueError("mode must be one of {'hist', 't2', 't3'} or integer 0/2/3")
+            preferred_mode = mode_map[key]
+        else:
+            preferred_mode = int(configured_mode)
+            if preferred_mode not in {MODE_HIST, MODE_T2, MODE_T3}:
+                raise ValueError("mode must be in valid set {0, 2, 3}")
+
+        candidate_modes = [preferred_mode]
+        if fallback_enabled:
+            for mode in (MODE_HIST, MODE_T2, MODE_T3):
+                if mode not in candidate_modes:
+                    candidate_modes.append(mode)
+
+        init_errors: list[tuple[int, str]] = []
+        selected_mode: int | None = None
+        for mode in candidate_modes:
+            retcode = self._dll.PH_Initialize(dev_idx, mode)
+            if retcode >= 0:
+                selected_mode = mode
+                break
+
+            err_buf = ctypes.create_string_buffer(40)
+            try:
+                self._dll.PH_GetErrorString(err_buf, retcode)
+                err_text = err_buf.value.decode(errors="replace")
+            except Exception:
+                err_text = f"retcode={retcode}"
+            init_errors.append((mode, err_text))
+
+        if selected_mode is None:
+            err_detail = "; ".join([f"mode={mode}:{msg}" for mode, msg in init_errors])
+            try:
+                self._dll.PH_CloseDevice(dev_idx)
+            except Exception:
+                pass
+            self._dll = None
+            raise InstrumentCommandError("PicoHarp300", "Initialize", err_detail)
+
         self._check(self._dll.PH_Calibrate(dev_idx), "Calibrate")
 
         self.set_sync_divider(int(self.config.get("sync_divider", 1)))
@@ -79,8 +127,9 @@ class PicoHarp300(BaseInstrument):
 
         self._serial = serial_buf.value.decode(errors="replace")
         self.logger.info(
-            "PicoHarp300 connected, serial=%s, resolution=%.1f ps",
+            "PicoHarp300 connected, serial=%s, mode=%d, resolution=%.1f ps",
             self._serial,
+            selected_mode,
             self.get_resolution(),
         )
 

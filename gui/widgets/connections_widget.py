@@ -17,7 +17,9 @@ from PySide6.QtWidgets import (
 
 from gui import (
     E36300Supply,
+    FLIPPER_AVAILABLE,
     GSM20H10,
+    KinesisFlipper,
     KDC101_AVAILABLE,
     KDC101Stage,
     PICOHARP_AVAILABLE,
@@ -190,7 +192,7 @@ class InstrumentRow(QWidget):
         Parameters:
             None (units: none).
         """
-        if self.key == "kdc101":
+        if self.key in {"kdc101", "flipper"}:
             serial = self.cfg.get("serial_number") or self.cfg.get("serial", "N/A")
             return f"Serial: {serial}"
         if self.key == "picoharp300":
@@ -250,6 +252,8 @@ class ConnectionsWidget(QWidget):
         ]
         if KDC101_AVAILABLE and KDC101Stage is not None:
             available.insert(0, ("kdc101", "KDC101 Stage", KDC101Stage))
+        if FLIPPER_AVAILABLE and KinesisFlipper is not None:
+            available.insert(1, ("flipper", "Filter Flipper", KinesisFlipper))
         if PICOHARP_AVAILABLE and PicoHarp300 is not None:
             available.append(("picoharp300", "PicoHarp300", PicoHarp300))
 

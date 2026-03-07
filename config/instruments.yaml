@@ -1,28 +1,36 @@
 kdc101:
-  serial: "REPLACE_WITH_SERIAL"
+  serial: "27005601"
   kinesis_path: "C:/Program Files/Thorlabs/Kinesis"
   scale: "PRM1-Z8"
   velocity_deg_per_s: 10.0
   settle_time_s: 0.3
-  simulate: true
+  simulate: false
+
+flipper:
+  serial: "37007871"
+  kinesis_path: "C:/Program Files/Thorlabs/Kinesis"
+  settle_time_s: 0.2
+  simulate: false
 
 pm100d:
-  visa_resource: "REPLACE_WITH_VISA_ADDR"
+  visa_resource: "USB0::0x1313::0x8078::P0023709::INSTR"
   wavelength_nm: 780.0
   averaging_count: 10
-  simulate: true
+  simulate: false
 
 e36300:
-  visa_resource: "REPLACE_WITH_VISA_ADDR"
-  simulate: true
+  visa_resource: "USB0::0x2A8D::0x1202::MY59292240::INSTR"
+  simulate: false
 
 gsm20h10:
-  visa_resource: "REPLACE_WITH_VISA_ADDR"
-  simulate: true
+  visa_resource: "USB0::0x2184::0x007D::gew872418::INSTR"
+  simulate: false
 
 picoharp300:
   device_index: 0
-  phlib_path: "C:/Windows/System32/PHLib.dll"
+  phlib_path: "C:/Program Files/PicoQuant/PH300-PHLibv30/demos/64/c/TTTRmode/PHLib64.dll"
+  mode: "hist"
+  init_mode_fallback: true
   sync_divider: 1
   cfd_sync_level_mv: 100
   cfd_sync_zerocross_mv: 10

@@ -44,6 +44,7 @@ def mac_config(tmp_path) -> str:
         "gsm20h10": {"simulate": True, "resource": "GPIB0::5::INSTR"},
         "picoharp300": {"simulate": True, "dll_path": None},
         "kdc101": {"simulate": True, "serial_number": "27000001", "kinesis_path": None},
+        "flipper": {"simulate": True, "serial": "37000001", "kinesis_path": None},
     }
     path = tmp_path / "instruments_test.yaml"
     path.write_text(yaml.dump(cfg), encoding="utf-8")
@@ -137,6 +138,40 @@ def test_e36300_panel_no_auto_read_on_init(qapp):
     assert panel._single_worker is None or not panel._single_worker.isRunning()
 
 
+def test_pm100d_panel_builds(qapp):
+    """PM100D panel constructs in simulate mode.
+
+    Parameters:
+        qapp: QApplication fixture (units: none).
+    """
+    _ = qapp
+    from gui.instruments.pm100d_panel import PM100DPanel
+
+    cfg = {"simulate": True, "resource": "USB0::dummy", "wavelength_nm": 532, "averaging_count": 10}
+    panel = PM100DPanel(cfg)
+    assert panel._read_once_btn is not None
+    assert panel._read_start_btn is not None
+    assert panel._zero_btn is not None
+
+
+def test_kinesis_panel_builds(qapp):
+    """Kinesis panel constructs in simulate mode.
+
+    Parameters:
+        qapp: QApplication fixture (units: none).
+    """
+    _ = qapp
+    from gui.instruments.kinesis_panel import KinesisPanel
+
+    cfg = {
+        "kdc101": {"simulate": True, "serial": "27000001", "kinesis_path": None},
+        "flipper": {"simulate": True, "serial": "37000001", "kinesis_path": None},
+    }
+    panel = KinesisPanel(cfg)
+    assert panel._stage_connect_btn is not None
+    assert panel._flipper_connect_btn is not None
+
+
 def test_main_window_opens(qapp, mac_config):
     """MainWindow constructs without raising errors.
 
@@ -149,4 +184,7 @@ def test_main_window_opens(qapp, mac_config):
 
     window = MainWindow(config_path=mac_config)
     assert window is not None
+    tab_labels = [window._instruments_widget.tabText(i) for i in range(window._instruments_widget.count())]
+    assert "PM100D" in tab_labels
+    assert "Kinesis" in tab_labels
     window.close()

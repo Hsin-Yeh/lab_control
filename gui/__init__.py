@@ -21,6 +21,13 @@ except (ImportError, OSError):
     PicoHarp300 = None
     PICOHARP_AVAILABLE = False
 
+try:
+    from instruments.flipper import KinesisFlipper
+    FLIPPER_AVAILABLE = True
+except (ImportError, OSError):
+    KinesisFlipper = None
+    FLIPPER_AVAILABLE = False
+
 from instruments.pm100d import PM100D
 from instruments.e36300 import E36300Supply
 from instruments.gsm20h10 import GSM20H10

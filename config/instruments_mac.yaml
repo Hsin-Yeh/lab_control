@@ -7,6 +7,11 @@ kdc101:
   serial_number: "27000001"
   kinesis_path: null
 
+flipper:
+  simulate: true
+  serial: "37000001"
+  kinesis_path: null
+
 pm100d:
   simulate: true
   resource: "USB0::0x1313::0x8072::P0000001::INSTR"

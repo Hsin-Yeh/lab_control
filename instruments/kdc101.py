@@ -45,8 +45,12 @@ class KDC101Stage(BaseInstrument):
             from pylablib.devices import Thorlabs  # type: ignore
 
             devices = Thorlabs.list_kinesis_devices()
-            available_serials = {str(item[0]) for item in devices}
-            if serial not in available_serials:
+            device_models = {str(item[0]): str(item[1]) for item in devices}
+            if serial not in device_models:
+                raise InstrumentConnectionError("KDC101Stage", serial)
+
+            model = device_models[serial].lower()
+            if "flipper" in model or model.startswith("mff"):
                 raise InstrumentConnectionError("KDC101Stage", serial)
 
             self._motor = Thorlabs.KinesisMotor(serial, scale=scale)

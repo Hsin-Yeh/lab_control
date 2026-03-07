@@ -48,6 +48,19 @@ class PM100D(BaseInstrument):
         except Exception as exc:
             raise InstrumentConnectionError("PM100D", resource) from exc
 
+    def _get_raw_instrument(self) -> Any:
+        """Return underlying VISA instrument handle from wrapper.
+
+        Parameters:
+            None (units: none).
+        """
+        if self._pm is None:
+            return None
+        for attr in ("_inst", "instrument", "inst"):
+            if hasattr(self._pm, attr):
+                return getattr(self._pm, attr)
+        return None
+
     def disconnect(self) -> None:
         """Disconnect PM100D.
 
@@ -58,7 +71,9 @@ class PM100D(BaseInstrument):
             self._pm = None
             return
         if self._pm is not None:
-            self._pm.instrument.close()
+            raw = self._get_raw_instrument()
+            if raw is not None and hasattr(raw, "close"):
+                raw.close()
             self._pm = None
 
     @property
@@ -80,7 +95,10 @@ class PM100D(BaseInstrument):
         if self.simulate:
             return "PM100D:SIMULATED"
         self._require_connected()
-        return str(self._pm.instrument.query("*IDN?").strip())
+        raw = self._get_raw_instrument()
+        if raw is None:
+            return "PM100D:UNKNOWN"
+        return str(raw.query("*IDN?").strip())
 
     def set_wavelength(self, wavelength_nm: float) -> None:
         """Set detector correction wavelength.
@@ -161,6 +179,31 @@ class PM100D(BaseInstrument):
         std = statistics.pstdev(samples) if len(samples) > 1 else 0.0
         self.logger.debug("Power avg over %d samples: mean=%.4e W std=%.4e W", n, mean, std)
         return float(mean)
+
+    def zero(self) -> None:
+        """Start PM100D zero adjustment routine.
+
+        Parameters:
+            None (units: none).
+        """
+        self._require_connected()
+        if self.simulate:
+            self.logger.info("[SIM] Zero adjustment triggered")
+            return
+
+        raw = self._get_raw_instrument()
+        if raw is None:
+            raise RuntimeError("PM100D raw instrument handle unavailable")
+
+        # SCPI path is used for broad wrapper compatibility.
+        raw.write("SENS:CORR:COLL:ZERO:INIT")
+        if hasattr(raw, "query"):
+            try:
+                raw.query("*OPC?")
+            except Exception:
+                # Some adapters do not support OPC query; zero still starts.
+                pass
+        self.logger.info("Zero adjustment complete")
 
     def _require_connected(self) -> None:
         """Ensure instrument is connected.
