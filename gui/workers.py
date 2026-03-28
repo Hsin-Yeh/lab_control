@@ -79,6 +79,10 @@ class RotationSweepWorker(_BaseWorker):
         start_deg: Sweep start angle (units: deg).
         stop_deg: Sweep stop angle (units: deg).
         step_deg: Sweep increment (units: deg).
+        wavelength_nm: PM wavelength setting (units: nm).
+        average_count: Number of readings averaged per angle (units: count).
+        zero_before_sweep: If True, zero PM before sweep (units: boolean).
+        initialize_devices: If True, initialize devices before sweep (units: boolean).
     """
 
     def __init__(
@@ -88,6 +92,10 @@ class RotationSweepWorker(_BaseWorker):
         start_deg: float,
         stop_deg: float,
         step_deg: float,
+        wavelength_nm: float,
+        average_count: int,
+        zero_before_sweep: bool,
+        initialize_devices: bool,
     ) -> None:
         super().__init__()
         self._config_path = config_path
@@ -95,6 +103,10 @@ class RotationSweepWorker(_BaseWorker):
         self._start_deg = start_deg
         self._stop_deg = stop_deg
         self._step_deg = step_deg
+        self._wavelength_nm = wavelength_nm
+        self._average_count = average_count
+        self._zero_before_sweep = zero_before_sweep
+        self._initialize_devices = initialize_devices
 
     def run(self) -> None:
         """Execute experiment call in worker thread.
@@ -112,14 +124,29 @@ class RotationSweepWorker(_BaseWorker):
                 start_deg=self._start_deg,
                 stop_deg=self._stop_deg,
                 step_deg=self._step_deg,
+                wavelength_nm=self._wavelength_nm,
+                average_count=self._average_count,
+                zero_before_sweep=self._zero_before_sweep,
+                initialize_devices=self._initialize_devices,
                 abort_event=self._abort_event,
+                progress_callback=self._on_progress,
             )
-            self.progress.emit(1, 1)
             self.finished.emit(results)
         except Exception as exc:
             self.error.emit(str(exc))
         finally:
             self._detach_logger(logger_name)
+
+    def _on_progress(self, current: int, total: int, row: dict) -> None:
+        """Forward per-point progress from experiment runner.
+
+        Parameters:
+            current: Completed point count (units: count).
+            total: Total point count (units: count).
+            row: Latest result row (units: per row fields).
+        """
+        _ = row
+        self.progress.emit(current, total)
 
 
 class IVCurveWorker(_BaseWorker):

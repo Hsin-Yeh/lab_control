@@ -178,6 +178,58 @@ def test_kinesis_panel_builds(qapp):
     assert panel._flipper_connect_btn is not None
 
 
+def test_rotation_sweep_tab_builds_with_pm_controls(qapp, mac_config):
+    """Rotation sweep tab exposes PM controls and initialization option.
+
+    Parameters:
+        qapp: QApplication fixture (units: none).
+        mac_config: Temporary config path (units: none).
+    """
+    _ = qapp
+    from gui.tabs.rotation_sweep_tab import RotationSweepTab
+
+    tab = RotationSweepTab(mac_config)
+    assert tab._wavelength_nm is not None
+    assert tab._average_count is not None
+    assert tab._zero_before_sweep is not None
+    assert tab._initialize_devices.isChecked()
+    assert tab._covered_btn is not None
+    assert tab._uncovered_btn is not None
+
+
+def test_rotation_sweep_tab_zero_sequence_waits_for_user(qapp, mac_config):
+    """Rotation sweep waits for cover/uncover confirmations before run.
+
+    Parameters:
+        qapp: QApplication fixture (units: none).
+        mac_config: Temporary config path (units: none).
+    """
+    _ = qapp
+    from gui.tabs.rotation_sweep_tab import RotationSweepTab
+
+    tab = RotationSweepTab(mac_config)
+    tab._zero_before_sweep.setChecked(True)
+
+    captured: dict[str, object] = {}
+
+    def _fake_start(kwargs: dict) -> None:
+        captured.update(kwargs)
+
+    tab._start_rotation_worker = _fake_start  # type: ignore[method-assign]
+
+    tab._on_run()
+    assert tab._zero_sequence_active is True
+    assert not tab._covered_btn.isHidden()
+    assert tab._uncovered_btn.isHidden()
+
+    tab._on_zero_complete()
+    assert tab._covered_btn.isHidden()
+    assert not tab._uncovered_btn.isHidden()
+
+    tab._on_zero_uncovered_start()
+    assert captured["zero_before_sweep"] is False
+
+
 def test_main_window_opens(qapp, mac_config):
     """MainWindow constructs without raising errors.
 
